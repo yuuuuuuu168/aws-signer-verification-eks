@@ -1,0 +1,24 @@
+# Terraform関連
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# IDE関連
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS関連
+.DS_Store
+Thumbs.db

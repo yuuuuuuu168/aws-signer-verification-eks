@@ -1,0 +1,40 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+      - IMAGE_TAG=latest
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Pulling nginx image for amd64...
+      - docker pull --platform linux/amd64 nginx:latest
+      - echo Tagging image...
+      - docker tag nginx:latest $REPOSITORY_URI:$IMAGE_TAG
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker image...
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - echo Getting image digest...
+      - IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $REPOSITORY_URI:$IMAGE_TAG | cut -d'@' -f2)
+      - echo Image pushed to $REPOSITORY_URI:$IMAGE_TAG
+      - echo Image digest is $IMAGE_DIGEST
+      - echo Installing notation...
+      - curl -L -o notation.tar.gz https://github.com/notaryproject/notation/releases/download/v1.2.0/notation_1.2.0_linux_amd64.tar.gz
+      - tar xvzf notation.tar.gz
+      - chmod +x notation
+      - echo Installing AWS Signer plugin...
+      - mkdir -p ~/.config/notation/plugins/com.amazonaws.signer.notation.plugin
+      - curl -L -o plugin.zip https://d2hvyiie56hcat.cloudfront.net/linux/amd64/plugin/latest/notation-aws-signer-plugin.zip
+      - unzip plugin.zip -d ~/.config/notation/plugins/com.amazonaws.signer.notation.plugin/
+      - chmod +x ~/.config/notation/plugins/com.amazonaws.signer.notation.plugin/notation-com.amazonaws.signer.notation.plugin
+      - echo Configuring notation signing key...
+      - ./notation key add --plugin com.amazonaws.signer.notation.plugin --id arn:aws:signer:$AWS_DEFAULT_REGION:$AWS_ACCOUNT_ID:/signing-profiles/$SIGNING_PROFILE_NAME container_signing_key
+      - echo Signing image...
+      - ./notation sign $REPOSITORY_URI:$IMAGE_TAG --key container_signing_key --plugin-config region=$AWS_DEFAULT_REGION
+      - echo Verifying signature...
+      - ./notation inspect $REPOSITORY_URI:$IMAGE_TAG

@@ -1,0 +1,29 @@
+# Terraform変数の設定例
+# このファイルをコピーして terraform.tfvars として使用してください
+# cp terraform.tfvars.example terraform.tfvars
+
+# プロジェクト名
+project_name = "aws-signer-verification"
+
+# AWSリージョン
+aws_region = "ap-northeast-1"
+
+# VPC CIDR
+vpc_cidr = "10.0.0.0/16"
+
+# アベイラビリティゾーン
+availability_zones = ["ap-northeast-1a", "ap-northeast-1c"]
+
+# EKSバージョン
+eks_version = "1.28"
+
+# ノードインスタンスタイプ（コスト最適化のため小型を推奨）
+node_instance_type = "t3.small"
+
+# ノード数設定（コスト最適化のため最小構成）
+node_desired_size = 1
+node_min_size     = 1
+node_max_size     = 2
+
+# ECRリポジトリ名
+ecr_repository_name = "nginx-signed"

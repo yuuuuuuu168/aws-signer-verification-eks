@@ -1,0 +1,86 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: check-images
+  annotations:
+    policies.kyverno.io/title: Verify Container Image Signatures with AWS Signer
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      このポリシーは、AWS Signerで署名されたコンテナイメージのみがデプロイ可能であることを保証します。
+      署名されていないイメージや、署名検証に失敗したイメージのデプロイは拒否されます。
+      
+      注意: このポリシーはkyverno-notation-awsアプリケーションと連携して動作します。
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  rules:
+  - name: call-aws-signer-extension
+    match:
+      any:
+      - resources:
+          namespaces:
+          - default
+          kinds:
+          - Pod
+    context:
+    - name: result
+      apiCall:
+        method: POST
+        data:
+        - key: images
+          value: "{{ images }}"
+        - key: trustPolicy
+          value: "aws-signer-tp"
+        service:
+          url: https://kyverno-notation-aws-svc.kyverno-notation-aws.svc/checkimages
+          caBundle: |-
+            -----BEGIN CERTIFICATE-----
+            MIIDtjCCAp6gAwIBAgIBATANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA0qLmt5
+            dmVybm8uc3ZjMB4XDTI2MDIxNjEzNDUxMVoXDTI2MDcxNjE0NDUxMVowIzEhMB8G
+            A1UEAxMYa3l2ZXJuby1ub3RhdGlvbi1hd3Mtc3ZjMIIBIjANBgkqhkiG9w0BAQEF
+            AAOCAQ8AMIIBCgKCAQEAkGVoW5FoDUDch6CGjCXIDHvSRHYpDiZLzkijkRL5M2wc
+            Q0r8ByHpi7E0afcG0/wdDVTYrL7pQQ0b9mbebIQWE5PAum/0TV5cpnWG2zjX8C7w
+            WVPwfYWEsUNJEQzdPQ0p/3goqEWlwvU+uK78J4C6ZkcQGzQQ+aXqdtUFbtuplpmg
+            EVSWxMhmhgf5AJKhgq2b9Pk/wS5LrgKBvTMNpQ30ptADMa3E/oDAayT1SqqGHYVr
+            mFqgHy2tVxi0vv8PVQJ3FPSYlhxFhCsEWqz3Pg39j2uVb44bBobzYx7vpCAGcYzM
+            3o/ddF7PZwOwYVliL5i+ZdSDHPC5zElpr+OaF2bSIwIDAQABo4H/MIH8MA4GA1Ud
+            DwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcDATAMBgNVHRMBAf8EAjAAMB8G
+            A1UdIwQYMBaAFMKkaA7obwFxvSbi0yz4Y5YY5SkpMIGlBgNVHREEgZ0wgZqCGGt5
+            dmVybm8tbm90YXRpb24tYXdzLXN2Y4Ita3l2ZXJuby1ub3RhdGlvbi1hd3Mtc3Zj
+            Lmt5dmVybm8tbm90YXRpb24tYXdzgjFreXZlcm5vLW5vdGF0aW9uLWF3cy1zdmMu
+            a3l2ZXJuby1ub3RhdGlvbi1hd3Muc3ZjghxzdmMua3l2ZXJuby1ub3RhdGlvbi1h
+            d3Mtc3ZjMA0GCSqGSIb3DQEBCwUAA4IBAQArUjyFskBz2O/oVdWCspsZaOUo/U7c
+            W0yNXp+axqP/UuwUfX7+9mxpiFlv0Ugw2QbWfY/ygsLgVETIcCnKmpk0Wru8zHGL
+            RTu+IEaeIvtsX8i+Iabt+JR2fRNp1g2Y+MHVpBmtyAV8ShIOf3nNPk2rmKbzjmKn
+            YwOiPC3sBlGSPGHN/a/kP/+R9po+/2Bi0koh0G7F38wL01MwzGYuoSVOP2kObXOJ
+            1+DYGx11o8jwJYWgkBATE0PBQ8fEluFEyfO3EL9D6wpWu4Zp6kYTdklGOaYcShj4
+            H+rL21YApaHjt6ahLyrx+viEZymJPq4eWdIoBzEe6ocrUYIBNyjzIhp4
+            -----END CERTIFICATE-----
+            -----BEGIN CERTIFICATE-----
+            MIIC7TCCAdWgAwIBAgIBADANBgkqhkiG9w0BAQsFADAYMRYwFAYDVQQDDA0qLmt5
+            dmVybm8uc3ZjMB4XDTI2MDIxNjEzNDUxMFoXDTI3MDIxNjE0NDUxMFowGDEWMBQG
+            A1UEAwwNKi5reXZlcm5vLnN2YzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
+            ggEBALvfYUcd2CUdtt23B+UPZILuPm9bnWqjfhfjPeco6vr6f9ApydKtr2FbgJG4
+            lVJOYOV2V5AFH6sjTHnMSDjLhflP1gkrMpOY9JSPeqkdI6NNe7TxlRVqtwBpiQre
+            74WOxPGwmsLN1IfQ/Z5v3qjhcg2FuklDSpXtyERa8VqzrU0PHdcPNtMuigjRfo3f
+            fyztZ/sp+vbdqthkGHkBkfisj0hoVqjLUS0CaozMq4A2p1zHIdvAdG7qKWLTp6oG
+            CUPpcQAf4wpkdB0nhAsDWGnkoLA/3vEPmz9XQm2EjVz9e97vWyuEOV3YW4X+AzTl
+            idn2KCLl05B/dfY1cAj6OOGVu7cCAwEAAaNCMEAwDgYDVR0PAQH/BAQDAgKkMA8G
+            A1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFMKkaA7obwFxvSbi0yz4Y5YY5SkpMA0G
+            CSqGSIb3DQEBCwUAA4IBAQBHzpAgvTG3saJV4JgsPl1g25FkSFK9L4g1RqHMk+R0
+            /YcAGoSKmRoHD9s0i1ObBnTueSXICo94RUNCFPVRq733Rm9k0S9G6xxFbSTg+cQT
+            fAWDcsZcZjfSHN3Qhili4EOr0GP4NnnJj2noPgX7nnH+lqdI+YVD8V3GMAm+tr1y
+            iqgtD5hk4tb2FLhx735j3I/pvzfoqoh8EQ/sFES20loLcweYz5bccSdDpw/cnhuT
+            za8c3XEmviFVLNAejHj/u8J5nVaIMfOeWaGVIiKDJUJYzt1OCgIBU3nM3ZmTK7SN
+            bUrL6a5D3TdlnLXblPcnBJcmnhVP7zDIxHTaDruowRXB
+            -----END CERTIFICATE-----
+    validate:
+      message: "署名検証に失敗しました。署名されたイメージのみがデプロイ可能です。"
+      deny:
+        conditions:
+          all:
+          - key: "{{ result.verified }}"
+            operator: Equals
+            value: false

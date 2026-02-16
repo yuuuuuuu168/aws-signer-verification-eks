@@ -1,0 +1,48 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: check-images
+  annotations:
+    policies.kyverno.io/title: Verify Container Image Signatures with AWS Signer
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      このポリシーは、AWS Signerで署名されたコンテナイメージのみがデプロイ可能であることを保証します。
+      署名されていないイメージや、署名検証に失敗したイメージのデプロイは拒否されます。
+      
+      注意: このポリシーはkyverno-notation-awsアプリケーションと連携して動作します。
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  rules:
+  - name: call-aws-signer-extension
+    match:
+      any:
+      - resources:
+          namespaces:
+          - default
+          kinds:
+          - Pod
+    context:
+    - name: tlscerts
+      apiCall:
+        urlPath: "/api/v1/namespaces/kyverno-notation-aws/secrets/kyverno-notation-aws-svc.kyverno-notation-aws.svc.tls-pair"
+        jmesPath: 'base64_decode(data."tls.crt")'
+    - name: response
+      apiCall:
+        method: POST
+        data:
+        - key: images
+          value: "{{images}}"
+        service:
+          url: https://kyverno-notation-aws-svc.kyverno-notation-aws.svc/checkimages
+          caBundle: '{{ tlscerts }}'
+    validate:
+      message: "署名検証に失敗しました。署名されたイメージのみがデプロイ可能です。"
+      deny:
+        conditions:
+          all:
+          - key: "{{ response.verified }}"
+            operator: Equals
+            value: false

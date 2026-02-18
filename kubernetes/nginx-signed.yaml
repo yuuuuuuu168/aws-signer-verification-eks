@@ -8,7 +8,7 @@ metadata:
 spec:
   containers:
   - name: nginx
-    image: 952787157428.dkr.ecr.ap-northeast-1.amazonaws.com/nginx-signed:latest
+    image: <YOUR_AWS_ACCOUNT_ID>.dkr.ecr.ap-northeast-1.amazonaws.com/nginx-signed:latest
     ports:
     - containerPort: 80
       protocol: TCP

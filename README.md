@@ -18,10 +18,10 @@ AWS Signerを使用したコンテナイメージの署名検証環境を、Kube
 | リソース | 構成 | 月額概算 |
 |---------|------|---------|
 | EKSコントロールプレーン | 1クラスタ | $73 |
-| EC2インスタンス | t3.small × 1ノード | $15 |
+| EC2インスタンス | t3.small × 3ノード | $45 |
 | NATゲートウェイ | 1台 | $32 |
 | その他 | ECR、データ転送等 | $1-5 |
-| **合計** | | **約$120-125** |
+| **合計** | | **約$150-155** |
 
 > **重要**: 使用後は必ず`terraform destroy`でリソースを削除してください。
 
@@ -132,14 +132,26 @@ helm install kyverno kyverno/kyverno \
 
 ### 8. kyverno-notation-awsのインストール
 
+Helmを使用してインストール:
 ```bash
-kubectl apply -f install.yaml
+# 既存のCRDを削除（初回のみ）
+kubectl delete crd trustpolicies.notation.nirmata.io --ignore-not-found=true
+kubectl delete crd truststores.notation.nirmata.io --ignore-not-found=true
+
+# Helmでインストール
+helm install kyverno-notation-aws \
+  oci://ghcr.io/nirmata/charts/kyverno-notation-aws \
+  --namespace kyverno-notation-aws \
+  --create-namespace
 ```
 
-CRDの適用:
+Podが起動するまで待機:
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/nirmata/kyverno-notation-aws/main/config/crds/notation.nirmata.io_trustpolicies.yaml
-kubectl apply -f https://raw.githubusercontent.com/nirmata/kyverno-notation-aws/main/config/crds/notation.nirmata.io_truststores.yaml
+kubectl get pods -n kyverno-notation-aws -w
+```
+
+`Running`状態になればOKです（Ctrl+Cで終了）。
+
 ```
 
 ### 9. TrustStoreとTrustPolicyの設定
@@ -151,24 +163,61 @@ kubectl apply -f kubernetes/trustpolicy.yaml
 
 ### 10. IRSAの設定
 
+まず、TerraformのoutputからKyvernoポリシーARNを取得:
+```bash
+cd terraform
+terraform output kyverno_notation_aws_policy_arn
+```
+
+出力されたARNを使用してIRSAを設定:
 ```bash
 eksctl create iamserviceaccount \
   --name kyverno-notation-aws \
   --namespace kyverno-notation-aws \
   --cluster aws-signer-verification-eks \
   --attach-policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly \
-  --attach-policy-arn <KYVERNO_POLICY_ARN> \
+  --attach-policy-arn <上記で取得したKYVERNO_POLICY_ARN> \
   --approve \
   --override-existing-serviceaccounts
+```
+
+例:
+```bash
+eksctl create iamserviceaccount \
+  --name kyverno-notation-aws \
+  --namespace kyverno-notation-aws \
+  --cluster aws-signer-verification-eks \
+  --attach-policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly \
+  --attach-policy-arn arn:aws:iam::<YOUR_AWS_ACCOUNT_ID>:policy/aws-signer-verification-kyverno-notation-aws-policy \
+  --approve \
+  --override-existing-serviceaccounts
+```
+
+ServiceAccountにアノテーションを追加:
+```bash
+kubectl annotate serviceaccount kyverno-notation-aws -n kyverno-notation-aws \
+  eks.amazonaws.com/role-arn=<IRSAロールARN> \
+  --overwrite
 ```
 
 Podを再起動:
 ```bash
 kubectl rollout restart deployment kyverno-notation-aws -n kyverno-notation-aws
+kubectl get pods -n kyverno-notation-aws -w
 ```
 
 ### 11. Kyvernoポリシーの適用
 
+証明書を取得してポリシーを更新:
+```bash
+# 証明書を取得
+kubectl get secret -n kyverno-notation-aws kyverno-notation-aws-svc.kyverno-notation-aws.svc.tls-pair -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/tls-pair.crt
+kubectl get secret -n kyverno-notation-aws kyverno-notation-aws-svc.kyverno-notation-aws.svc.tls-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/tls-ca.crt
+```
+
+> **注意**: `kubernetes/kyverno-policy-final.yaml`の`caBundle`セクションに上記の証明書を貼り付ける必要があります。証明書は環境ごとに異なるため、手動で更新してください。
+
+ポリシーを適用:
 ```bash
 kubectl apply -f kubernetes/kyverno-policy-final.yaml
 ```
@@ -186,6 +235,7 @@ kubectl apply -f kubernetes/nginx-signed.yaml
 **期待される結果:**
 ```
 pod/nginx-signed created
+service/nginx-signed-service created
 ```
 
 Podの状態確認:
@@ -199,7 +249,7 @@ NAME           READY   STATUS    RESTARTS   AGE
 nginx-signed   1/1     Running   0          30s
 ```
 
-✅ Podが`Running`状態になれば、署名検証が成功しています。
+Podが`Running`状態になれば、署名検証が成功しています。
 
 ### 署名なしイメージのデプロイ（拒否）
 
@@ -215,17 +265,29 @@ resource Pod/default/nginx-unsigned was blocked due to the following policies
 
 check-images:
   call-aws-signer-extension: |
-    failed to verify image ...
+    failed to verify image nginx:latest: signature verification failed
 ```
 
-✅ このエラーが表示されれば、Kyvernoポリシーが正しく動作し、署名なしイメージを拒否しています。
+このエラーが表示されれば、Kyvernoポリシーが正しく動作し、署名なしイメージを拒否しています。
+
+### 検証完了後のクリーンアップ
+
+検証が完了したら、次のクリーンアップ作業の前にPodを削除します:
+
+```bash
+# ポリシーをAuditモードに変更（削除をブロックしないようにする）
+kubectl patch clusterpolicy check-images --type=merge -p '{"spec":{"validationFailureAction":"Audit"}}'
+
+# Podとサービスを削除
+kubectl delete -f kubernetes/nginx-signed.yaml
+```
 
 ### 検証結果のまとめ
 
-| シナリオ | イメージ | 期待される結果 | 実際の結果 |
-|---------|---------|--------------|-----------|
-| 署名済みイメージ | ECR nginx-signed:latest | Pod作成成功、Running状態 | ✅ 成功 |
-| 署名なしイメージ | Docker Hub nginx:latest | デプロイ拒否 | ✅ 拒否された |
+| シナリオ | イメージ | 期待される結果 | 検証結果 |
+|---------|---------|--------------|---------|
+| 署名済みイメージ | ECR nginx-signed:latest | Pod作成成功、Running状態 | 成功 |
+| 署名なしイメージ | Docker Hub nginx:latest | デプロイ拒否 | 拒否された |
 
 ---
 
@@ -236,11 +298,11 @@ check-images:
 ### 1. Kubernetesリソースの削除
 
 ```bash
-# ポリシーを一時的にAuditモードに変更
+# ポリシーを一時的にAuditモードに変更（Pod削除をブロックしないようにする）
 kubectl patch clusterpolicy check-images --type=merge -p '{"spec":{"validationFailureAction":"Audit"}}'
 
-# Podを削除
-kubectl delete pod nginx-signed --ignore-not-found=true
+# Podとサービスを削除
+kubectl delete -f kubernetes/nginx-signed.yaml --ignore-not-found=true
 
 # 各ネームスペースのリソースを削除
 kubectl delete all --all -n default

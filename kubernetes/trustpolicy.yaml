@@ -15,4 +15,4 @@ spec:
     trustStores:
     - signingAuthority:aws-signer-ts
     trustedIdentities:
-    - "arn:aws:signer:<AWS_REGION>:<AWS_ACCOUNT_ID>:/signing-profiles/container_signing_profile"
+    - "arn:aws:signer:ap-northeast-1:<YOUR_AWS_ACCOUNT_ID>:/signing-profiles/container_signing_profile"

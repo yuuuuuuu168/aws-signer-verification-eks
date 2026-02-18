@@ -1,1 +1,115 @@
-404: Not Found
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno-notation-aws
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kyverno-notation-aws
+  namespace: kyverno-notation-aws
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kyverno-notation-aws
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - notation.nirmata.io
+  resources:
+  - truststores
+  - trustpolicies
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kyverno-notation-aws
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kyverno-notation-aws
+subjects:
+- kind: ServiceAccount
+  name: kyverno-notation-aws
+  namespace: kyverno-notation-aws
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kyverno-notation-aws
+  namespace: kyverno-notation-aws
+  labels:
+    app: kyverno-notation-aws
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kyverno-notation-aws
+  template:
+    metadata:
+      labels:
+        app: kyverno-notation-aws
+    spec:
+      serviceAccountName: kyverno-notation-aws
+      containers:
+      - name: kyverno-notation-aws
+        image: ghcr.io/nirmata/kyverno-notation-aws:v0.0.7
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 9443
+          name: https
+          protocol: TCP
+        env:
+        - name: TUF_ENABLED
+          value: "false"
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kyverno-notation-aws
+  namespace: kyverno-notation-aws
+  labels:
+    app: kyverno-notation-aws
+spec:
+  type: ClusterIP
+  ports:
+  - port: 443
+    targetPort: 9443
+    protocol: TCP
+    name: https
+  selector:
+    app: kyverno-notation-aws
